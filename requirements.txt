@@ -8,3 +8,4 @@ mutagen
 scipy
 matplotlib
 imageio-ffmpeg
+pyinstaller
