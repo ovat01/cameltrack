@@ -1,0 +1,10 @@
+PyQt6
+librosa
+soundfile
+numpy
+pandas
+pyloudnorm
+mutagen
+scipy
+matplotlib
+imageio-ffmpeg
