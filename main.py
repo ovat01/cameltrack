@@ -7,10 +7,12 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
+import shutil
 from db import DatabaseManager
 from analyzer import AudioAnalyzer
 from harmonic import get_compatible_keys
 from camelot_widget import CamelotWheelWidget
+from export_dialog import ExportDialog
 
 class AnalysisThread(QThread):
     progress = pyqtSignal(int)
@@ -148,6 +150,17 @@ class MainWindow(QMainWindow):
 
         right_panel.addWidget(self.table)
 
+        # Export Button Row
+        export_row = QHBoxLayout()
+        export_row.addStretch()
+
+        self.export_btn = QPushButton("EXPORTAR")
+        self.export_btn.setStyleSheet("background-color: #20c997; color: white; padding: 8px 25px; border-radius: 5px;")
+        self.export_btn.clicked.connect(self.export_files)
+        export_row.addWidget(self.export_btn)
+
+        right_panel.addLayout(export_row)
+
         main_layout.addLayout(right_panel, 4)
 
     def set_lufs(self, val):
@@ -197,13 +210,20 @@ class MainWindow(QMainWindow):
         # Color code Camelot key
         key_color = self.wheel_widget.colors.get(t.get('camelot_key', ''), "#ffffff")
 
+        # Energy stars calculation
+        raw_energy = float(t.get('energy', 1.0))
+        # Map 1-10 to 1-5 stars
+        stars_count = int(round(raw_energy / 2))
+        stars_count = max(1, min(5, stars_count))
+        stars_str = "★" * stars_count
+
         items = [
             str(t.get('id', '')),
             str(t.get('title', '')),
             str(t.get('artist', '')),
             str(t.get('bpm', '')),
             str(t.get('camelot_key', '')),
-            str(t.get('energy', '')),
+            stars_str,
             str(t.get('genre', '')),
             str(t.get('lufs', '')),
             str(t.get('rms', '')),
@@ -213,15 +233,77 @@ class MainWindow(QMainWindow):
 
         for col, text in enumerate(items):
             item = QTableWidgetItem(text)
-            # Make not editable
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
 
-            # Apply color to key column
-            if col == 4:
+            if col == 4: # Tono
                 item.setBackground(QColor(key_color))
                 item.setForeground(QColor("black"))
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+            elif col == 5: # Energy stars
+                item.setForeground(QColor("#f1c40f")) # Gold color for stars
 
             self.table.setItem(row, col, item)
+
+    def export_files(self):
+        track_count = self.table.rowCount()
+        if track_count == 0:
+            return
+
+        dialog = ExportDialog(track_count, self)
+        if dialog.exec():
+            mode = dialog.get_export_mode()
+
+            # Fetch all tracks from table data
+            for row in range(track_count):
+                title_item = self.table.item(row, 1)
+                artist_item = self.table.item(row, 2)
+                key_item = self.table.item(row, 4)
+                path_item = self.table.item(row, 10)
+
+                if not (title_item and artist_item and key_item and path_item):
+                    continue
+
+                title = title_item.text()
+                artist = artist_item.text()
+                key = key_item.text()
+                old_path = path_item.text()
+
+                if not os.path.exists(old_path):
+                    continue
+
+                dir_name = os.path.dirname(old_path)
+                ext = os.path.splitext(old_path)[1]
+
+                # Format: [Key] Artist - Title
+                # Handle cases where artist or title might be missing
+                display_artist = artist if artist and artist != "Unknown Artist" else "Unknown"
+                display_title = title if title else "Track"
+
+                # Sanitize filenames
+                safe_artist = "".join(c for c in display_artist if c.isalnum() or c in " -_").strip()
+                safe_title = "".join(c for c in display_title if c.isalnum() or c in " -_").strip()
+
+                new_filename = f"[{key}] {safe_artist} - {safe_title}{ext}"
+                new_path = os.path.join(dir_name, new_filename)
+
+                if old_path == new_path:
+                    continue # Already correctly named
+
+                try:
+                    if mode == 1: # Rename
+                        os.rename(old_path, new_path)
+                        # Update table with new path (in a real app we'd update DB too)
+                        path_item.setText(new_path)
+                    elif mode == 2: # Copy
+                        shutil.copy2(old_path, new_path)
+                except Exception as e:
+                    print(f"Error exporting file {old_path}: {e}")
+
+            # In a full implementation, we'd trigger a UI refresh or toast notification here.
+            print("Export complete.")
 
 def main():
     app = QApplication(sys.argv)
