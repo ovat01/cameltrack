@@ -9,3 +9,5 @@ scipy
 matplotlib
 imageio-ffmpeg
 pyinstaller
+scikit-learn
+joblib
