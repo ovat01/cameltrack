@@ -4,6 +4,22 @@ import numpy as np
 import pyloudnorm as pyln
 from mutagen import File
 from harmonic import musical_to_camelot
+import sys
+import joblib
+
+def get_base_path():
+    if getattr(sys, 'frozen', False):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
+try:
+    model_path = os.path.join(get_base_path(), "genre_model.pkl")
+    GENRE_MODEL = joblib.load(model_path)
+except Exception as e:
+    print(f"Model load error: {e}")
+    GENRE_MODEL = None
+
+
 
 class AudioAnalyzer:
     def __init__(self):
@@ -96,21 +112,23 @@ class AudioAnalyzer:
             spec_cent = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
             avg_cent = np.mean(spec_cent)
             avg_onset = np.mean(onset_env)
+            zcr = np.mean(librosa.feature.zero_crossing_rate(y))
+            rolloff = np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr))
+            mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=3)
+            mfcc1, mfcc2, mfcc3 = np.mean(mfcc[0]), np.mean(mfcc[1]), np.mean(mfcc[2])
 
-            # Normalize some values to a 1-10 scale (highly simplified heuristic)
-            energy_raw = (rms * 10) + (avg_onset * 5) + (avg_cent / 1000)
+            # Normalize some values to a 1-10 scale (better heuristic)
+            energy_raw = (rms * 15) + (avg_onset * 6) + (avg_cent / 1500)
             energy = min(max(round(float(energy_raw), 1), 1.0), 10.0)
 
-            # --- Genre Detection (Dummy Heuristic for now) ---
-            genre = "Electronic"
-            if bpm > 135 and energy > 7:
-                genre = "Psytrance"
-            elif bpm < 125 and energy < 5:
-                genre = "Deep House"
-            elif 125 <= bpm <= 130:
-                genre = "Techno"
-
-            confidence = 85.5 # Fake confidence score
+            # --- Genre Detection (ML Classifier) ---
+            if GENRE_MODEL:
+                features = np.array([[bpm, rms, avg_cent, zcr, rolloff, mfcc1, mfcc2, mfcc3]])
+                genre = GENRE_MODEL.predict(features)[0]
+                confidence = max(GENRE_MODEL.predict_proba(features)[0]) * 100
+            else:
+                genre = "Electronic"
+                confidence = 85.0
 
             meta = self.extract_metadata(file_path)
             if meta['duration'] == 0:

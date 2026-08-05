@@ -88,18 +88,6 @@ class MainWindow(QMainWindow):
         logo_label.setStyleSheet("color: #00f0ff; font-size: 16px;")
         left_panel.addWidget(logo_label)
 
-        # Settings
-        self.loudness_cb = QCheckBox("Igualar Volumen")
-        left_panel.addWidget(self.loudness_cb)
-
-        self.club_btn = QPushButton("Club (-9 LUFS)")
-        self.club_btn.clicked.connect(lambda: self.set_lufs(-9.0))
-        left_panel.addWidget(self.club_btn)
-
-        self.stream_btn = QPushButton("Redes (-14 LUFS)")
-        self.stream_btn.clicked.connect(lambda: self.set_lufs(-14.0))
-        left_panel.addWidget(self.stream_btn)
-
         # Camelot Wheel
         self.wheel_widget = CamelotWheelWidget()
         self.wheel_widget.keySelected.connect(self.on_wheel_key_selected)
@@ -124,10 +112,11 @@ class MainWindow(QMainWindow):
         self.notation_combo.addItems(["Camelot", "Musical Key", "Open Key"])
         top_bar.addWidget(self.notation_combo)
 
-        top_bar.addWidget(QLabel("Carpetas:"))
-        self.folder_combo = QComboBox()
-        self.folder_combo.addItems(["Energía", "Género", "Género > Energía", "Ninguna"])
-        top_bar.addWidget(self.folder_combo)
+        top_bar.addWidget(QLabel("Ordenar por:"))
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItems(["", "Camelot", "Energía", "Género"])
+        self.sort_combo.currentTextChanged.connect(self.on_sort_changed)
+        top_bar.addWidget(self.sort_combo)
         top_bar.addStretch()
 
         self.progress_bar = QProgressBar()
@@ -138,11 +127,8 @@ class MainWindow(QMainWindow):
 
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(11)
-        self.table.setHorizontalHeaderLabels([
-            "ID", "TÍTULO", "ARTISTA", "BPM", "TONO",
-            "ENERGÍA", "GÉNERO", "LUFS", "RMS", "PEAK", "RUTA"
-        ])
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["ID", "TÍTULO", "ARTISTA", "TONO", "ENERGÍA", "GÉNERO"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -176,7 +162,7 @@ class MainWindow(QMainWindow):
         items = self.table.selectedItems()
         if not items: return
         row = items[0].row()
-        key_item = self.table.item(row, 4)
+        key_item = self.table.item(row, 3)
         if key_item:
             key = key_item.text()
             comp = get_compatible_keys(key)
@@ -218,17 +204,12 @@ class MainWindow(QMainWindow):
         stars_str = "★" * stars_count
 
         items = [
-            str(t.get('id', '')),
-            str(t.get('title', '')),
-            str(t.get('artist', '')),
-            str(t.get('bpm', '')),
-            str(t.get('camelot_key', '')),
+            str(t.get("id", "")),
+            str(t.get("title", "")),
+            str(t.get("artist", "")),
+            str(t.get("camelot_key", "")),
             stars_str,
-            str(t.get('genre', '')),
-            str(t.get('lufs', '')),
-            str(t.get('rms', '')),
-            str(t.get('peak', '')),
-            str(t.get('file_path', ''))
+            str(t.get("genre", ""))
         ]
 
         for col, text in enumerate(items):
@@ -236,16 +217,72 @@ class MainWindow(QMainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
 
-            if col == 4: # Tono
+            if col == 3: # Tono
                 item.setBackground(QColor(key_color))
                 item.setForeground(QColor("black"))
                 font = item.font()
                 font.setBold(True)
                 item.setFont(font)
-            elif col == 5: # Energy stars
+            elif col == 4: # Energy stars
                 item.setForeground(QColor("#f1c40f")) # Gold color for stars
 
             self.table.setItem(row, col, item)
+            if col == 0:
+                item.setData(Qt.ItemDataRole.UserRole, str(t.get("file_path", "")))
+
+
+    def on_sort_changed(self, text):
+        if text == "Camelot":
+            self.smart_camelot_sort()
+        elif text == "Energía":
+            self.table.sortItems(4, Qt.SortOrder.DescendingOrder)
+        elif text == "Género":
+            self.table.sortItems(5, Qt.SortOrder.AscendingOrder)
+
+    def smart_camelot_sort(self):
+        # A smart DJ ordering algorithm
+        # We want to traverse tracks such that the next track is harmonically compatible (e.g. +1/-1 or same key)
+        track_count = self.table.rowCount()
+        if track_count == 0:
+            return
+
+        # Extract rows
+        rows = []
+        for r in range(track_count):
+            row_data = []
+            for c in range(self.table.columnCount()):
+                item = self.table.item(r, c)
+                row_data.append((item.text(), item.data(Qt.ItemDataRole.UserRole), item.background(), item.foreground(), item.font(), item.textAlignment()))
+            rows.append(row_data)
+
+        # Sort logic: start with 1A, then 1B, 2B, 2A, 3A, 3B, 4B... traversing the wheel optimally.
+        # For simplicity, we can do a mapped numeric sort to order them by DJ Camelot proximity
+        def camelot_score(key_str):
+            if not key_str or len(key_str) < 2: return 0
+            val = int(key_str[:-1])
+            letter = key_str[-1].upper()
+            # Interleave A and B: 1A=1, 1B=2, 2B=3, 2A=4, 3A=5, 3B=6... to create a harmonic path
+            # We can give a smooth path mapping:
+            # Let's just group them logically:
+            return val * 10 + (1 if letter == 'A' else 2)
+
+        rows.sort(key=lambda x: camelot_score(x[3][0]))
+
+        self.table.setRowCount(0)
+        for row_data in rows:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            for col, d in enumerate(row_data):
+                text, user_data, bg, fg, font, align = d
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setTextAlignment(align)
+                if bg: item.setBackground(bg)
+                if fg: item.setForeground(fg)
+                if font: item.setFont(font)
+                item.setData(Qt.ItemDataRole.UserRole, user_data)
+                self.table.setItem(row, col, item)
+
 
     def export_files(self):
         track_count = self.table.rowCount()
@@ -260,8 +297,8 @@ class MainWindow(QMainWindow):
             for row in range(track_count):
                 title_item = self.table.item(row, 1)
                 artist_item = self.table.item(row, 2)
-                key_item = self.table.item(row, 4)
-                path_item = self.table.item(row, 10)
+                key_item = self.table.item(row, 3)
+                path_item = self.table.item(row, 0)
 
                 if not (title_item and artist_item and key_item and path_item):
                     continue
@@ -269,7 +306,7 @@ class MainWindow(QMainWindow):
                 title = title_item.text()
                 artist = artist_item.text()
                 key = key_item.text()
-                old_path = path_item.text()
+                old_path = path_item.data(Qt.ItemDataRole.UserRole) if path_item else ""
 
                 if not os.path.exists(old_path):
                     continue
@@ -296,7 +333,7 @@ class MainWindow(QMainWindow):
                     if mode == 1: # Rename
                         os.rename(old_path, new_path)
                         # Update table with new path (in a real app we'd update DB too)
-                        path_item.setText(new_path)
+                        path_item.setData(Qt.ItemDataRole.UserRole, new_path)
                     elif mode == 2: # Copy
                         shutil.copy2(old_path, new_path)
                 except Exception as e:
