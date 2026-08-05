@@ -61,21 +61,43 @@ class MainWindow(QMainWindow):
         self.init_ui()
         self.load_library()
 
+    def toggle_theme(self):
+        self.is_dark_theme = not self.is_dark_theme
+        self.apply_theme()
+
+    def apply_theme(self):
+        if self.is_dark_theme:
+            self.setStyleSheet("""
+                QMainWindow { background-color: #0f1015; color: #ffffff; }
+                QWidget { background-color: #0f1015; color: #ffffff; }
+                QLabel { color: #ffffff; }
+                QTableWidget { background-color: #1a1c23; color: #ffffff; border: 1px solid #00f0ff; gridline-color: #2a2c33; }
+                QTableWidget::item:selected { background-color: #3b2e5a; }
+                QHeaderView::section { background-color: #2a2c33; color: #00f0ff; padding: 4px; border: 1px solid #1a1c23; }
+                QPushButton { background-color: #7b2cbf; color: white; border-radius: 5px; padding: 5px 15px; font-weight: bold; }
+                QPushButton:hover { background-color: #9d4edd; }
+                QComboBox { background-color: #2a2c33; color: white; border: 1px solid #00f0ff; border-radius: 3px; padding: 2px; }
+                QProgressBar { text-align: center; color: white; background-color: #2a2c33; border: 1px solid #00f0ff; border-radius: 5px; }
+                QProgressBar::chunk { background-color: #00f0ff; }
+            """)
+        else:
+            self.setStyleSheet("""
+                QMainWindow { background-color: #f0f0f0; color: #000000; }
+                QWidget { background-color: #f0f0f0; color: #000000; }
+                QLabel { color: #000000; }
+                QTableWidget { background-color: #ffffff; color: #000000; border: 1px solid #aaaaaa; gridline-color: #dddddd; }
+                QTableWidget::item:selected { background-color: #a0c4ff; }
+                QHeaderView::section { background-color: #e0e0e0; color: #000000; padding: 4px; border: 1px solid #cccccc; }
+                QPushButton { background-color: #0077b6; color: white; border-radius: 5px; padding: 5px 15px; font-weight: bold; }
+                QPushButton:hover { background-color: #023e8a; }
+                QComboBox { background-color: #ffffff; color: #000000; border: 1px solid #aaaaaa; border-radius: 3px; padding: 2px; }
+                QProgressBar { text-align: center; color: black; background-color: #ffffff; border: 1px solid #aaaaaa; border-radius: 5px; }
+                QProgressBar::chunk { background-color: #0077b6; }
+            """)
+
     def init_ui(self):
-        # Dark Theme Palette
-        self.setStyleSheet("""
-            QMainWindow { background-color: #0f1015; color: #ffffff; }
-            QWidget { background-color: #0f1015; color: #ffffff; }
-            QLabel { color: #ffffff; }
-            QTableWidget { background-color: #1a1c23; color: #ffffff; border: 1px solid #00f0ff; gridline-color: #2a2c33; }
-            QTableWidget::item:selected { background-color: #3b2e5a; }
-            QHeaderView::section { background-color: #2a2c33; color: #00f0ff; padding: 4px; border: 1px solid #1a1c23; }
-            QPushButton { background-color: #7b2cbf; color: white; border-radius: 5px; padding: 5px 15px; font-weight: bold; }
-            QPushButton:hover { background-color: #9d4edd; }
-            QComboBox { background-color: #2a2c33; color: white; border: 1px solid #00f0ff; border-radius: 3px; padding: 2px; }
-            QProgressBar { text-align: center; color: white; background-color: #2a2c33; border: 1px solid #00f0ff; border-radius: 5px; }
-            QProgressBar::chunk { background-color: #00f0ff; }
-        """)
+        self.is_dark_theme = True
+        self.apply_theme()
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -84,7 +106,7 @@ class MainWindow(QMainWindow):
         # --- Left Panel ---
         left_panel = QVBoxLayout()
 
-        logo_label = QLabel("<b>DJ Harmonic Studio v3.0</b>")
+        logo_label = QLabel("<b>CamelTrack</b>")
         logo_label.setStyleSheet("color: #00f0ff; font-size: 16px;")
         left_panel.addWidget(logo_label)
 
@@ -100,6 +122,15 @@ class MainWindow(QMainWindow):
         add_file_btn.clicked.connect(self.add_files)
         left_panel.addWidget(add_file_btn)
 
+        clear_btn = QPushButton("LIMPIAR")
+        clear_btn.setStyleSheet("background-color: #e63946; color: white; border-radius: 5px; padding: 5px 15px; font-weight: bold;")
+        clear_btn.clicked.connect(self.clear_library)
+        left_panel.addWidget(clear_btn)
+
+        self.theme_btn = QPushButton("Tema Claro/Oscuro")
+        self.theme_btn.clicked.connect(self.toggle_theme)
+        left_panel.addWidget(self.theme_btn)
+
         main_layout.addLayout(left_panel, 1)
 
         # --- Right Panel (Main Area) ---
@@ -109,7 +140,8 @@ class MainWindow(QMainWindow):
         top_bar = QHBoxLayout()
         top_bar.addWidget(QLabel("Notación:"))
         self.notation_combo = QComboBox()
-        self.notation_combo.addItems(["Camelot", "Musical Key", "Open Key"])
+        self.notation_combo.addItems(["Camelot"])
+        self.notation_combo.setEnabled(False)
         top_bar.addWidget(self.notation_combo)
 
         top_bar.addWidget(QLabel("Ordenar por:"))
@@ -128,7 +160,7 @@ class MainWindow(QMainWindow):
         # Table
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["ID", "TÍTULO", "ARTISTA", "TONO", "ENERGÍA", "GÉNERO"])
+        self.table.setHorizontalHeaderLabels(["ID", "TÍTULO", "BPM", "TONO", "ENERGÍA", "GÉNERO"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -183,6 +215,11 @@ class MainWindow(QMainWindow):
     def on_analysis_finished(self):
         self.progress_bar.setVisible(False)
 
+    def clear_library(self):
+        self.db.clear_all()
+
+        self.load_library()
+
     def load_library(self):
         tracks = self.db.get_all_tracks()
         self.table.setRowCount(0)
@@ -203,10 +240,15 @@ class MainWindow(QMainWindow):
         stars_count = max(1, min(5, stars_count))
         stars_str = "★" * stars_count
 
+        try:
+            bpm = str(int(round(float(t.get("bpm", 0)))))
+        except (ValueError, TypeError):
+            bpm = ""
+
         items = [
             str(t.get("id", "")),
             str(t.get("title", "")),
-            str(t.get("artist", "")),
+            bpm,
             str(t.get("camelot_key", "")),
             stars_str,
             str(t.get("genre", ""))
@@ -296,15 +338,13 @@ class MainWindow(QMainWindow):
             # Fetch all tracks from table data
             for row in range(track_count):
                 title_item = self.table.item(row, 1)
-                artist_item = self.table.item(row, 2)
                 key_item = self.table.item(row, 3)
                 path_item = self.table.item(row, 0)
 
-                if not (title_item and artist_item and key_item and path_item):
+                if not (title_item and key_item and path_item):
                     continue
 
                 title = title_item.text()
-                artist = artist_item.text()
                 key = key_item.text()
                 old_path = path_item.data(Qt.ItemDataRole.UserRole) if path_item else ""
 
@@ -316,14 +356,12 @@ class MainWindow(QMainWindow):
 
                 # Format: [Key] Artist - Title
                 # Handle cases where artist or title might be missing
-                display_artist = artist if artist and artist != "Unknown Artist" else "Unknown"
                 display_title = title if title else "Track"
 
                 # Sanitize filenames
-                safe_artist = "".join(c for c in display_artist if c.isalnum() or c in " -_").strip()
                 safe_title = "".join(c for c in display_title if c.isalnum() or c in " -_").strip()
 
-                new_filename = f"[{key}] {safe_artist} - {safe_title}{ext}"
+                new_filename = f"[{key}] {safe_title}{ext}"
                 new_path = os.path.join(dir_name, new_filename)
 
                 if old_path == new_path:

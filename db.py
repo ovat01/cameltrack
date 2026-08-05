@@ -107,6 +107,15 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    def clear_all(self):
+        conn = self._get_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM tracks')
+            conn.commit()
+        finally:
+            conn.close()
+
     def get_all_tracks(self):
         conn = self._get_conn()
         try:
