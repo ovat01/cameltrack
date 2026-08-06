@@ -4,8 +4,19 @@ import hashlib
 from datetime import datetime
 
 class DatabaseManager:
-    def __init__(self, db_path="cameltrack.db"):
-        self.db_path = db_path
+    def __init__(self, db_name="cameltrack.db"):
+        import os
+        import sys
+
+        # Store in AppData for Windows
+        if sys.platform == 'win32':
+            app_data = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
+            base_dir = os.path.join(app_data, 'DJ_CamelTrack')
+        else:
+            base_dir = os.path.join(os.path.expanduser('~'), '.dj_cameltrack')
+
+        os.makedirs(base_dir, exist_ok=True)
+        self.db_path = os.path.join(base_dir, db_name)
         self.init_db()
 
     def _get_conn(self):

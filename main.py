@@ -3,11 +3,14 @@ import os
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLabel, QComboBox, QTableWidget,
                              QTableWidgetItem, QPushButton, QHeaderView,
-                             QFileDialog, QProgressBar, QCheckBox)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+                             QFileDialog, QProgressBar, QCheckBox, QSlider, QSizePolicy)
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl
 from PyQt6.QtGui import QColor, QFont
 
 import shutil
+from waveform_widget import InteractiveWaveformWidget, MiniatureWaveformWidget
+import os
 from db import DatabaseManager
 from analyzer import AudioAnalyzer
 from harmonic import get_compatible_keys
@@ -36,7 +39,7 @@ class AnalysisThread(QThread):
             if existing:
                 self.result.emit(existing)
             else:
-                data = self.analyzer.analyze(file_path, self.target_lufs)
+                data = self.analyzer.analyze(file_path, file_hash, self.target_lufs)
                 if data:
                     data['file_hash'] = file_hash
                     data['file_path'] = file_path
@@ -74,6 +77,7 @@ class MainWindow(QMainWindow):
                 QTableWidget { background-color: #1a1c23; color: #ffffff; border: 1px solid #00f0ff; gridline-color: #2a2c33; }
                 QTableWidget::item:selected { background-color: #3b2e5a; }
                 QHeaderView::section { background-color: #2a2c33; color: #00f0ff; padding: 4px; border: 1px solid #1a1c23; }
+                QTableWidget::item { padding: 5px; }
                 QPushButton { background-color: #7b2cbf; color: white; border-radius: 5px; padding: 5px 15px; font-weight: bold; }
                 QPushButton:hover { background-color: #9d4edd; }
                 QComboBox { background-color: #2a2c33; color: white; border: 1px solid #00f0ff; border-radius: 3px; padding: 2px; }
@@ -101,7 +105,7 @@ class MainWindow(QMainWindow):
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
+        main_layout = QHBoxLayout()
 
         # --- Left Panel ---
         left_panel = QVBoxLayout()
@@ -131,7 +135,7 @@ class MainWindow(QMainWindow):
         self.theme_btn.clicked.connect(self.toggle_theme)
         left_panel.addWidget(self.theme_btn)
 
-        main_layout.addLayout(left_panel, 1)
+        # left_panel added later
 
         # --- Right Panel (Main Area) ---
         right_panel = QVBoxLayout()
@@ -159,12 +163,16 @@ class MainWindow(QMainWindow):
 
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["ID", "TÍTULO", "BPM", "TONO", "ENERGÍA", "GÉNERO"])
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(["WAVEFORM", "ID", "TÍTULO", "BPM", "TONO", "ENERGÍA", "GÉNERO"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().resizeSection(0, 150)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.verticalHeader().setDefaultSectionSize(40)
         self.table.itemSelectionChanged.connect(self.on_table_selection)
+        self.table.cellDoubleClicked.connect(self.on_table_double_click)
+        self.table.cellClicked.connect(self.on_table_click)
 
         right_panel.addWidget(self.table)
 
@@ -180,6 +188,59 @@ class MainWindow(QMainWindow):
         right_panel.addLayout(export_row)
 
         main_layout.addLayout(right_panel, 4)
+        # --- Bottom Panel (Player) ---
+        bottom_panel = QVBoxLayout()
+
+        # Audio Player Setup
+        self.player = QMediaPlayer()
+        self.audio_output = QAudioOutput()
+        self.player.setAudioOutput(self.audio_output)
+
+        player_controls = QHBoxLayout()
+
+        self.play_btn = QPushButton("▶")
+        self.pause_btn = QPushButton("⏸")
+        self.stop_btn = QPushButton("⏹")
+
+        self.play_btn.clicked.connect(self.player.play)
+        self.pause_btn.clicked.connect(self.player.pause)
+        self.stop_btn.clicked.connect(self.player.stop)
+
+        player_controls.addWidget(self.play_btn)
+        player_controls.addWidget(self.pause_btn)
+        player_controls.addWidget(self.stop_btn)
+
+        self.time_label = QLabel("00:00 / 00:00")
+        player_controls.addWidget(self.time_label)
+
+        self.waveform_widget = InteractiveWaveformWidget()
+        self.waveform_widget.position_changed.connect(self._on_waveform_seek)
+        player_controls.addWidget(self.waveform_widget, stretch=1)
+
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setValue(70)
+        self.volume_slider.setFixedWidth(100)
+        self.volume_slider.valueChanged.connect(self._on_volume_changed)
+        self.audio_output.setVolume(0.7)
+        player_controls.addWidget(QLabel("Vol:"))
+        player_controls.addWidget(self.volume_slider)
+
+        bottom_panel.addLayout(player_controls)
+
+        # Wrap the whole layout
+        main_layout_wrapper = QVBoxLayout(central_widget)
+        top_split = QHBoxLayout()
+        top_split.addLayout(left_panel, 1)
+        top_split.addLayout(right_panel, 4)
+        main_layout_wrapper.addLayout(top_split)
+        main_layout_wrapper.addLayout(bottom_panel)
+
+        self.player.positionChanged.connect(self._on_position_changed)
+        self.player.durationChanged.connect(self._on_duration_changed)
+
+        # We need to change how the main layout was built originally
+
 
     def set_lufs(self, val):
         self.target_lufs = val
@@ -190,11 +251,20 @@ class MainWindow(QMainWindow):
         comp = get_compatible_keys(key)
         self.wheel_widget.setActiveKeys(comp)
 
+    def on_table_double_click(self, row, col):
+        path_item = self.table.item(row, 0)
+        if path_item:
+            file_path = path_item.data(Qt.ItemDataRole.UserRole)
+            file_hash = path_item.data(Qt.ItemDataRole.UserRole + 1)
+            duration = path_item.data(Qt.ItemDataRole.UserRole + 2)
+            if file_path and file_hash and duration:
+                self.load_track(file_path, file_hash, float(duration))
+
     def on_table_selection(self):
         items = self.table.selectedItems()
         if not items: return
         row = items[0].row()
-        key_item = self.table.item(row, 3)
+        key_item = self.table.item(row, 4)
         if key_item:
             key = key_item.text()
             comp = get_compatible_keys(key)
@@ -246,6 +316,7 @@ class MainWindow(QMainWindow):
             bpm = ""
 
         items = [
+            "", # Waveform placeholder
             str(t.get("id", "")),
             str(t.get("title", "")),
             bpm,
@@ -259,27 +330,41 @@ class MainWindow(QMainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
 
-            if col == 3: # Tono
+            if col == 4: # Tono
                 item.setBackground(QColor(key_color))
                 item.setForeground(QColor("black"))
                 font = item.font()
                 font.setBold(True)
                 item.setFont(font)
-            elif col == 4: # Energy stars
+            elif col == 5: # Energy stars
                 item.setForeground(QColor("#f1c40f")) # Gold color for stars
 
             self.table.setItem(row, col, item)
             if col == 0:
+                # Store data in the first column item
                 item.setData(Qt.ItemDataRole.UserRole, str(t.get("file_path", "")))
+                item.setData(Qt.ItemDataRole.UserRole + 1, str(t.get("file_hash", "")))
+                item.setData(Qt.ItemDataRole.UserRole + 2, str(t.get("duration", 0)))
+
+                # Add mini waveform widget
+                import sys
+                if sys.platform == 'win32':
+                    app_data = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
+                    cache_dir = os.path.join(app_data, 'DJ_CamelTrack', 'cache')
+                else:
+                    cache_dir = os.path.join(os.path.expanduser('~'), '.dj_cameltrack', 'cache')
+                c_path = os.path.join(cache_dir, f"{t.get('file_hash', '')}_wave.npy")
+                mini_wave = MiniatureWaveformWidget(c_path, float(t.get('duration', 0))*1000)
+                self.table.setCellWidget(row, col, mini_wave)
 
 
     def on_sort_changed(self, text):
         if text == "Camelot":
             self.smart_camelot_sort()
         elif text == "Energía":
-            self.table.sortItems(4, Qt.SortOrder.DescendingOrder)
+            self.table.sortItems(5, Qt.SortOrder.DescendingOrder)
         elif text == "Género":
-            self.table.sortItems(5, Qt.SortOrder.AscendingOrder)
+            self.table.sortItems(6, Qt.SortOrder.AscendingOrder)
 
     def smart_camelot_sort(self):
         # A smart DJ ordering algorithm
@@ -308,7 +393,7 @@ class MainWindow(QMainWindow):
             # Let's just group them logically:
             return val * 10 + (1 if letter == 'A' else 2)
 
-        rows.sort(key=lambda x: camelot_score(x[3][0]))
+        rows.sort(key=lambda x: camelot_score(x[4][0]))
 
         self.table.setRowCount(0)
         for row_data in rows:
@@ -337,8 +422,8 @@ class MainWindow(QMainWindow):
 
             # Fetch all tracks from table data
             for row in range(track_count):
-                title_item = self.table.item(row, 1)
-                key_item = self.table.item(row, 3)
+                title_item = self.table.item(row, 2)
+                key_item = self.table.item(row, 4)
                 path_item = self.table.item(row, 0)
 
                 if not (title_item and key_item and path_item):
@@ -379,6 +464,53 @@ class MainWindow(QMainWindow):
 
             # In a full implementation, we'd trigger a UI refresh or toast notification here.
             print("Export complete.")
+
+    def _on_volume_changed(self, value):
+        self.audio_output.setVolume(value / 100.0)
+
+    def _on_position_changed(self, position):
+        # Position is in ms
+        duration = self.player.duration()
+        if duration > 0:
+            pos_sec = position // 1000
+            dur_sec = duration // 1000
+            self.time_label.setText(f"{pos_sec//60:02d}:{pos_sec%60:02d} / {dur_sec//60:02d}:{dur_sec%60:02d}")
+            self.waveform_widget.set_position(position)
+
+    def _on_duration_changed(self, duration):
+        self._on_position_changed(0)
+
+    def load_track(self, file_path, file_hash, duration):
+        url = QUrl.fromLocalFile(file_path)
+        self.player.setSource(url)
+
+        # Load waveform
+        import sys
+        if sys.platform == 'win32':
+            app_data = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
+            cache_dir = os.path.join(app_data, 'DJ_CamelTrack', 'cache')
+        else:
+            cache_dir = os.path.join(os.path.expanduser('~'), '.dj_cameltrack', 'cache')
+
+        cache_path = os.path.join(cache_dir, f"{file_hash}_wave.npy")
+        self.waveform_widget.load_waveform(cache_path, int(duration * 1000))
+
+        # Force a pre-load evaluation by touching properties if needed
+        # QMediaPlayer natively handles buffering.
+        self.player.play()
+
+    def _on_waveform_seek(self, pos_ms):
+        self.player.setPosition(pos_ms)
+
+    def on_table_click(self, row, col):
+        if col == 0:
+            path_item = self.table.item(row, 0)
+            if path_item:
+                file_path = path_item.data(Qt.ItemDataRole.UserRole)
+                file_hash = path_item.data(Qt.ItemDataRole.UserRole + 1)
+                duration = path_item.data(Qt.ItemDataRole.UserRole + 2)
+                if file_path and file_hash and duration:
+                    self.load_track(file_path, file_hash, float(duration))
 
 def main():
     app = QApplication(sys.argv)
