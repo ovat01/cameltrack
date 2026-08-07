@@ -10,7 +10,7 @@ OutputDir=userdocs:Inno Setup Examples Output
 OutputBaseFilename=DJ_CamelTrack_Setup
 
 [Files]
-Source: "dist\DJ CamelTrack\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\DJ CamelTrack.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "genre_model.pkl"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

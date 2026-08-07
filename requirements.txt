@@ -11,3 +11,4 @@ imageio-ffmpeg
 pyinstaller
 scikit-learn
 joblib
+PyQt6-Multimedia

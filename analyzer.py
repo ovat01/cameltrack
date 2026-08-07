@@ -19,18 +19,6 @@ except Exception as e:
     print(f"Model load error: {e}")
     GENRE_MODEL = None
 
-import sys
-
-def get_app_data_path():
-    if sys.platform == 'win32':
-        app_data = os.environ.get('LOCALAPPDATA', os.path.expanduser('~'))
-        return os.path.join(app_data, 'DJ_CamelTrack', 'cache')
-    return os.path.join(os.path.expanduser('~'), '.dj_cameltrack', 'cache')
-
-CACHE_DIR = get_app_data_path()
-os.makedirs(CACHE_DIR, exist_ok=True)
-
-
 
 
 class AudioAnalyzer:
@@ -56,12 +44,11 @@ class AudioAnalyzer:
 
                 if hasattr(audio, 'info'):
                     meta['duration'] = audio.info.length
-
         except Exception as e:
             print(f"Metadata extraction error: {e}")
         return meta
 
-    def analyze(self, file_path, file_hash, target_lufs=-14.0):
+    def analyze(self, file_path, target_lufs=-14.0):
         try:
             # Load audio using librosa. For large libraries, we might load a snippet,
             # but for full analysis we need the whole file or a large chunk.
@@ -143,48 +130,7 @@ class AudioAnalyzer:
                 genre = "Electronic"
                 confidence = 85.0
 
-
-            # --- Waveform Generation ---
-            # Generate multi-band waveform
-            try:
-                # Downsample further for waveform drawing to save space/time (e.g. 50 points per second)
-                points_per_sec = 50
-                hop_length = sr // points_per_sec
-
-                # We need Lows, Mids, Highs
-                # Using a simple spectrogram approach
-                S = np.abs(librosa.stft(y, n_fft=2048, hop_length=hop_length))
-
-                # Frequencies: sr/2 = 11025. Bins = 1025 (Hz per bin ~ 10.7)
-                # Lows: < 250Hz (bins 0-23)
-                # Mids: 250Hz - 4000Hz (bins 23-372)
-                # Highs: > 4000Hz (bins 372-1025)
-
-                lows = np.mean(S[0:24, :], axis=0)
-                mids = np.mean(S[24:373, :], axis=0)
-                highs = np.mean(S[373:, :], axis=0)
-
-                # Normalize each band
-                def norm(band):
-                    m = np.max(band)
-                    return band / m if m > 0 else band
-
-                lows = norm(lows)
-                mids = norm(mids)
-                highs = norm(highs)
-
-                # Combine into single array (N, 3) representing RGB channels conceptually
-                waveform_data = np.stack([lows, mids, highs], axis=1).astype(np.float32)
-
-                # Save to cache
-                wave_path = os.path.join(CACHE_DIR, f"{file_hash}_wave.npy")
-                np.save(wave_path, waveform_data)
-
-            except Exception as we:
-                print(f"Waveform generation error: {we}")
-
             meta = self.extract_metadata(file_path)
-
             if meta['duration'] == 0:
                 meta['duration'] = duration
 
@@ -205,7 +151,6 @@ class AudioAnalyzer:
                 'dynamic_range': round(float(dynamic_range), 2),
                 'confidence': confidence
             }
-
 
         except Exception as e:
             print(f"Error analyzing {file_path}: {e}")
