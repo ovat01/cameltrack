@@ -93,7 +93,7 @@ class MainWindow(QMainWindow):
         # --- Left Panel ---
         left_panel = QVBoxLayout()
 
-        logo_label = QLabel("<b>CamelTrack v3.0</b>")
+        logo_label = QLabel("<b>CamelTrack</b>")
         logo_label.setStyleSheet("color: #d4af37; font-size: 16px;")
         left_panel.addWidget(logo_label)
 
@@ -145,15 +145,15 @@ class MainWindow(QMainWindow):
 
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(8)
-        self.table.setHorizontalHeaderLabels(["WAVE", "ART", "ID", "TÍTULO", "BPM", "TONO", "ENERGÍA", "GÉNERO"])
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(["WAVE", "ID", "TÍTULO", "BPM", "TONO", "ENERGÍA", "GÉNERO"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.itemSelectionChanged.connect(self.on_table_selection)
 
-        self.table.hideColumn(2) # Hide ID
+        self.table.hideColumn(1) # Hide ID
 
         right_panel.addWidget(self.table)
 
@@ -290,11 +290,9 @@ class MainWindow(QMainWindow):
             bpm_str = "0"
 
         items = [
-            "〰", # WAVE
-            "🖼", # ART
+            "", # WAVE
             str(t.get("id", "")),
             str(t.get("title", "")),
-            str(t.get("artist", "")),
             bpm_str,
             str(t.get("camelot_key", "")),
             stars_str,
@@ -324,9 +322,9 @@ class MainWindow(QMainWindow):
         if text == "Camelot":
             self.smart_camelot_sort()
         elif text == "Energía":
-            self.table.sortItems(6, Qt.SortOrder.DescendingOrder)
+            self.table.sortItems(5, Qt.SortOrder.DescendingOrder)
         elif text == "Género":
-            self.table.sortItems(7, Qt.SortOrder.AscendingOrder)
+            self.table.sortItems(6, Qt.SortOrder.AscendingOrder)
 
     def smart_camelot_sort(self):
         # A smart DJ ordering algorithm
@@ -355,7 +353,7 @@ class MainWindow(QMainWindow):
             # Let's just group them logically:
             return val * 10 + (1 if letter == 'A' else 2)
 
-        rows.sort(key=lambda x: camelot_score(x[5][0]))
+        rows.sort(key=lambda x: camelot_score(x[4][0]))
 
         self.table.setRowCount(0)
         for row_data in rows:

@@ -164,10 +164,17 @@ class AudioAnalyzer:
 
                         total = low_energy + mid_energy + high_energy
                         if total > 0:
-                            # Use Pioneer DJ colors algorithm mapping: High=Red, Mid=Green, Low=Blue
-                            r = int(min(255, (high_energy / total) * 255 * 1.5))
-                            g = int(min(255, (mid_energy / total) * 255 * 1.2))
-                            b = int(min(255, (low_energy / total) * 255 * 1.2))
+                            # Pioneer DJ RGB Mapping
+                            # Normalize against the maximum energy present in this specific frame to ensure colors are vivid
+                            max_energy = max(low_energy, mid_energy, high_energy)
+                            r = int(min(255, (high_energy / max_energy) * 255))
+                            g = int(min(255, (mid_energy / max_energy) * 255))
+                            b = int(min(255, (low_energy / max_energy) * 255))
+
+                            # Soften completely stark colors for better visuals
+                            r = max(50, r)
+                            g = max(50, g)
+                            b = max(100, b) # Lows are usually present, give a blue base
                         else:
                             r, g, b = 100, 100, 100
                     else:

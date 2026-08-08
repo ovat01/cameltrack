@@ -28,7 +28,7 @@ def get_mini_waveform_pixmap_from_data(waveform_json, width=100, height=30):
                 if isinstance(data_point, dict) and "amp" in data_point and "rgb" in data_point:
                     val = data_point["amp"]
                     r, g, b = data_point["rgb"]
-                    color = QColor(r, g, b)
+                    color = QColor(int(r), int(g), int(b))
                 else:
                     val = float(data_point)
                     color = QColor("#d4af37") # Legacy fallback

@@ -307,13 +307,6 @@ class PlayerWidget(QWidget):
         self.artist_label.setText(artist)
         self.meta_label.setText(f"Key: {key} | Genre: {genre} | Energy: {energy}")
 
-        if hasattr(self, 'art_label'):
-            if cover_pixmap and not cover_pixmap.isNull():
-                self.art_label.setPixmap(cover_pixmap)
-            else:
-                self.art_label.clear()
-                self.art_label.setText("No Art")
-
         if HAS_MULTIMEDIA and self.player:
             self.player.stop()
             self.player.setSource(QUrl.fromLocalFile(file_path))
