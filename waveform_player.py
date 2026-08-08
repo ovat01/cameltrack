@@ -12,17 +12,24 @@ class WaveformLoaderThread(QThread):
     def __init__(self, file_path):
         super().__init__()
         self.file_path = file_path
+        self._is_cancelled = False
+
+    def cancel(self):
+        self._is_cancelled = True
 
     def run(self):
         try:
             # Load audio quickly, resample to 22050
             y, sr = librosa.load(self.file_path, sr=22050, mono=True)
+            if self._is_cancelled: return
+
             # Create ~200 bins
             bins = 200
             samples_per_bin = len(y) // bins
 
             waveform_data = []
             for i in range(bins):
+                if self._is_cancelled: return
                 start = i * samples_per_bin
                 end = start + samples_per_bin
                 # Extract max absolute amplitude in the bin
@@ -31,6 +38,8 @@ class WaveformLoaderThread(QThread):
                     waveform_data.append(float(val))
                 else:
                     waveform_data.append(0.0)
+
+            if self._is_cancelled: return
 
             # Normalize
             max_val = max(waveform_data) if waveform_data else 1.0
@@ -140,26 +149,59 @@ class WaveformWidget(QWidget):
 class PlayerWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(10, 10, 10, 10)
+
+        # Track Info Panel (Left)
+        self.info_layout = QVBoxLayout()
+        self.art_label = QLabel("[Art]")
+        self.art_label.setFixedSize(60, 60)
+        self.art_label.setStyleSheet("background-color: #222; border: 1px solid #d4af37;")
+        self.art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.title_label = QLabel("No track selected")
+        self.title_label.setStyleSheet("font-weight: bold; color: white;")
+        self.artist_label = QLabel("Unknown Artist")
+        self.artist_label.setStyleSheet("color: #aaa;")
+
+        self.meta_label = QLabel("Key: -- | Genre: -- | Energy: --")
+        self.meta_label.setStyleSheet("color: #d4af37; font-size: 10px;")
+
+        info_text_layout = QVBoxLayout()
+        info_text_layout.addWidget(self.title_label)
+        info_text_layout.addWidget(self.artist_label)
+        info_text_layout.addWidget(self.meta_label)
+
+        track_info_h = QHBoxLayout()
+        track_info_h.addWidget(self.art_label)
+        track_info_h.addLayout(info_text_layout)
+
+        self.info_layout.addLayout(track_info_h)
+        self.layout.addLayout(self.info_layout, 1)
+
+        # Player Controls and Waveform (Center/Right)
+        self.player_layout = QVBoxLayout()
 
         self.waveform = WaveformWidget()
-        self.layout.addWidget(self.waveform)
+        self.player_layout.addWidget(self.waveform)
 
         self.controls_layout = QHBoxLayout()
 
         self.play_btn = QPushButton("▶")
         self.play_btn.setFixedSize(40, 40)
-        self.play_btn.setStyleSheet("border-radius: 20px; background-color: #3b82f6; color: white; font-weight: bold;")
+        self.play_btn.setStyleSheet("border-radius: 20px; background-color: #d4af37; color: black; font-weight: bold;")
         self.play_btn.clicked.connect(self.toggle_play)
 
         self.time_label = QLabel("00:00 / 00:00")
+        self.time_label.setStyleSheet("color: white;")
 
         self.controls_layout.addWidget(self.play_btn)
         self.controls_layout.addWidget(self.time_label)
         self.controls_layout.addStretch()
 
-        self.layout.addLayout(self.controls_layout)
+        self.player_layout.addLayout(self.controls_layout)
+
+        self.layout.addLayout(self.player_layout, 4)
 
         self.player = QMediaPlayer()
         self.audio_output = QAudioOutput()
@@ -180,7 +222,11 @@ class PlayerWidget(QWidget):
             new_position = int(progress * self.current_duration)
             self.player.setPosition(new_position)
 
-    def load_track(self, file_path):
+    def load_track(self, file_path, title="Unknown", artist="Unknown", key="--", genre="--", energy="--"):
+
+        self.title_label.setText(title)
+        self.artist_label.setText(artist)
+        self.meta_label.setText(f"Key: {key} | Genre: {genre} | Energy: {energy}")
 
         self.player.stop()
         self.player.setSource(QUrl.fromLocalFile(file_path))
@@ -191,7 +237,8 @@ class PlayerWidget(QWidget):
 
         # Load real waveform in background thread to not block GUI
         if self.loader_thread and self.loader_thread.isRunning():
-            self.loader_thread.terminate()
+            self.loader_thread.cancel()
+            self.loader_thread.wait() # Safely wait for thread to finish
 
         self.loader_thread = WaveformLoaderThread(file_path)
         self.loader_thread.waveform_ready.connect(self.waveform.set_waveform_data)

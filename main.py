@@ -67,28 +67,34 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         # Dark Theme Palette
         self.setStyleSheet("""
-            QMainWindow { background-color: #0f1015; color: #ffffff; }
-            QWidget { background-color: #0f1015; color: #ffffff; }
+            QMainWindow { background-color: #121212; color: #ffffff; }
+            QWidget { background-color: #121212; color: #ffffff; }
             QLabel { color: #ffffff; }
-            QTableWidget { background-color: #1a1c23; color: #ffffff; border: 1px solid #00f0ff; gridline-color: #2a2c33; }
-            QTableWidget::item:selected { background-color: #3b2e5a; }
-            QHeaderView::section { background-color: #2a2c33; color: #00f0ff; padding: 4px; border: 1px solid #1a1c23; }
-            QPushButton { background-color: #7b2cbf; color: white; border-radius: 5px; padding: 5px 15px; font-weight: bold; }
-            QPushButton:hover { background-color: #9d4edd; }
-            QComboBox { background-color: #2a2c33; color: white; border: 1px solid #00f0ff; border-radius: 3px; padding: 2px; }
-            QProgressBar { text-align: center; color: white; background-color: #2a2c33; border: 1px solid #00f0ff; border-radius: 5px; }
-            QProgressBar::chunk { background-color: #00f0ff; }
+            QTableWidget { background-color: #1e1e1e; color: #ffffff; border: 1px solid #d4af37; gridline-color: #333333; }
+            QTableWidget::item:selected { background-color: #4a3d13; }
+            QHeaderView::section { background-color: #252525; color: #d4af37; padding: 4px; border: 1px solid #1e1e1e; }
+            QPushButton { background-color: #d4af37; color: black; border-radius: 5px; padding: 5px 15px; font-weight: bold; }
+            QPushButton:hover { background-color: #f1c40f; }
+            QComboBox { background-color: #252525; color: white; border: 1px solid #d4af37; border-radius: 3px; padding: 2px; }
+            QProgressBar { text-align: center; color: white; background-color: #252525; border: 1px solid #d4af37; border-radius: 5px; }
+            QProgressBar::chunk { background-color: #d4af37; }
         """)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
+        # Main layout is vertical now to hold split view on top and dock on bottom
+        main_layout_v = QVBoxLayout(central_widget)
+        main_layout_v.setContentsMargins(0, 0, 0, 0)
+        main_layout_v.setSpacing(0)
+
+        top_split_widget = QWidget()
+        main_layout = QHBoxLayout(top_split_widget)
 
         # --- Left Panel ---
         left_panel = QVBoxLayout()
 
         logo_label = QLabel("<b>CamelTrack v3.0</b>")
-        logo_label.setStyleSheet("color: #00f0ff; font-size: 16px;")
+        logo_label.setStyleSheet("color: #d4af37; font-size: 16px;")
         left_panel.addWidget(logo_label)
 
         # Camelot Wheel
@@ -137,18 +143,17 @@ class MainWindow(QMainWindow):
 
         right_panel.addLayout(top_bar)
 
-        # Player Widget
-        self.player_widget = PlayerWidget()
-        right_panel.addWidget(self.player_widget)
-
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["ID", "TÍTULO", "BPM", "TONO", "ENERGÍA", "GÉNERO"])
+        self.table.setColumnCount(9)
+        self.table.setHorizontalHeaderLabels(["WAVE", "ART", "ID", "TÍTULO", "ARTISTA", "BPM", "TONO", "ENERGÍA", "GÉNERO"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.itemSelectionChanged.connect(self.on_table_selection)
+
+        self.table.hideColumn(2) # Hide ID
 
         right_panel.addWidget(self.table)
 
@@ -164,6 +169,18 @@ class MainWindow(QMainWindow):
         right_panel.addLayout(export_row)
 
         main_layout.addLayout(right_panel, 4)
+        main_layout_v.addWidget(top_split_widget, 1)
+
+        # --- Bottom Panel (Player) ---
+        bottom_panel = QWidget()
+        bottom_panel.setStyleSheet("background-color: #1a1a1a; border-top: 1px solid #d4af37;")
+        bottom_layout = QVBoxLayout(bottom_panel)
+        bottom_layout.setContentsMargins(10, 10, 10, 10)
+
+        self.player_widget = PlayerWidget()
+        bottom_layout.addWidget(self.player_widget)
+
+        main_layout_v.addWidget(bottom_panel, 0)
 
 
     def toggle_bw_theme(self, state):
@@ -201,13 +218,24 @@ class MainWindow(QMainWindow):
 
         # Load track into player
         path_item = self.table.item(row, 0)
+        title_item = self.table.item(row, 3)
+        artist_item = self.table.item(row, 4)
+        key_item = self.table.item(row, 6)
+        energy_item = self.table.item(row, 7)
+        genre_item = self.table.item(row, 8)
+
         if path_item:
             file_path = path_item.data(Qt.ItemDataRole.UserRole)
             if file_path:
-                self.player_widget.load_track(file_path)
+                title = title_item.text() if title_item else "Unknown"
+                artist = artist_item.text() if artist_item else "Unknown"
+                key = key_item.text() if key_item else "--"
+                energy = energy_item.text() if energy_item else "--"
+                genre = genre_item.text() if genre_item else "--"
+                self.player_widget.load_track(file_path, title, artist, key, genre, energy)
 
         # Highlight Camelot
-        key_item = self.table.item(row, 3)
+        key_item = self.table.item(row, 6)
         if key_item:
             key = key_item.text()
             comp = get_compatible_keys(key)
@@ -262,8 +290,11 @@ class MainWindow(QMainWindow):
             bpm_str = "0"
 
         items = [
+            "〰", # WAVE
+            "🖼", # ART
             str(t.get("id", "")),
             str(t.get("title", "")),
+            str(t.get("artist", "")),
             bpm_str,
             str(t.get("camelot_key", "")),
             stars_str,
@@ -275,29 +306,27 @@ class MainWindow(QMainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
 
-            if col == 3: # Tono
+            if col == 6: # Tono
                 item.setBackground(QColor(key_color))
                 item.setForeground(QColor("black"))
                 font = item.font()
                 font.setBold(True)
                 item.setFont(font)
-            elif col == 4: # Energy stars
+            elif col == 7: # Energy stars
                 item.setForeground(QColor("#f1c40f")) # Gold color for stars
 
             self.table.setItem(row, col, item)
             if col == 0:
                 item.setData(Qt.ItemDataRole.UserRole, str(t.get("file_path", "")))
-            elif col == 1:
-                item.setData(Qt.ItemDataRole.UserRole, str(t.get("artist", "")))
 
 
     def on_sort_changed(self, text):
         if text == "Camelot":
             self.smart_camelot_sort()
         elif text == "Energía":
-            self.table.sortItems(4, Qt.SortOrder.DescendingOrder)
+            self.table.sortItems(7, Qt.SortOrder.DescendingOrder)
         elif text == "Género":
-            self.table.sortItems(5, Qt.SortOrder.AscendingOrder)
+            self.table.sortItems(8, Qt.SortOrder.AscendingOrder)
 
     def smart_camelot_sort(self):
         # A smart DJ ordering algorithm
@@ -326,7 +355,7 @@ class MainWindow(QMainWindow):
             # Let's just group them logically:
             return val * 10 + (1 if letter == 'A' else 2)
 
-        rows.sort(key=lambda x: camelot_score(x[3][0]))
+        rows.sort(key=lambda x: camelot_score(x[6][0]))
 
         self.table.setRowCount(0)
         for row_data in rows:
@@ -355,16 +384,17 @@ class MainWindow(QMainWindow):
 
             # Fetch all tracks from table data
             for row in range(track_count):
-                title_item = self.table.item(row, 1)
-                bpm_item = self.table.item(row, 2)
-                key_item = self.table.item(row, 3)
+                title_item = self.table.item(row, 3)
+                artist_item = self.table.item(row, 4)
+                bpm_item = self.table.item(row, 5)
+                key_item = self.table.item(row, 6)
                 path_item = self.table.item(row, 0)
 
                 if not (title_item and bpm_item and key_item and path_item):
                     continue
 
                 title = title_item.text()
-                artist = title_item.data(Qt.ItemDataRole.UserRole)
+                artist = artist_item.text() if artist_item else "Unknown"
                 if not artist:
                     artist = "Unknown"
                 key = key_item.text()
