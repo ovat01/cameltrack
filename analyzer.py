@@ -134,10 +134,62 @@ class AudioAnalyzer:
             if meta['duration'] == 0:
                 meta['duration'] = duration
 
+            # Create a 200 bin RGB waveform summary right here
+            try:
+                bins = 200
+                samples_per_bin = max(1, len(y) // bins)
+                S = np.abs(librosa.stft(y, n_fft=2048, hop_length=512))
+                freqs = librosa.fft_frequencies(sr=sr, n_fft=2048)
+
+                low_idx = np.where(freqs < 250)[0]
+                mid_idx = np.where((freqs >= 250) & (freqs < 4000))[0]
+                high_idx = np.where(freqs >= 4000)[0]
+
+                frames_per_bin = max(1, S.shape[1] // bins)
+                waveform_data = []
+
+                for i in range(bins):
+                    start_samp = i * samples_per_bin
+                    end_samp = start_samp + samples_per_bin
+                    amp = float(np.max(np.abs(y[start_samp:end_samp]))) if len(y[start_samp:end_samp]) > 0 else 0.0
+
+                    start_frame = i * frames_per_bin
+                    end_frame = start_frame + frames_per_bin
+
+                    if end_frame <= S.shape[1] and start_frame < S.shape[1]:
+                        S_bin = S[:, start_frame:end_frame]
+                        low_energy = np.mean(S_bin[low_idx, :])
+                        mid_energy = np.mean(S_bin[mid_idx, :])
+                        high_energy = np.mean(S_bin[high_idx, :])
+
+                        total = low_energy + mid_energy + high_energy
+                        if total > 0:
+                            # Use Pioneer DJ colors algorithm mapping: High=Red, Mid=Green, Low=Blue
+                            r = int(min(255, (high_energy / total) * 255 * 1.5))
+                            g = int(min(255, (mid_energy / total) * 255 * 1.2))
+                            b = int(min(255, (low_energy / total) * 255 * 1.2))
+                        else:
+                            r, g, b = 100, 100, 100
+                    else:
+                        r, g, b = 100, 100, 100
+
+                    waveform_data.append({"amp": amp, "rgb": [r, g, b]})
+
+                max_val = max([item["amp"] for item in waveform_data]) if waveform_data else 1.0
+                if max_val > 0:
+                    for item in waveform_data:
+                        item["amp"] = round(item["amp"] / max_val, 3)
+            except Exception as we:
+                print(f"Waveform error: {we}")
+                waveform_data = []
+
+            import json
+
             return {
                 'artist': meta['artist'],
                 'title': meta['title'],
                 'bpm': bpm,
+                'waveform_data': json.dumps(waveform_data),
                 'musical_key': musical_key,
                 'camelot_key': camelot_key,
                 'open_key': open_key,

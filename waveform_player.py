@@ -25,26 +25,53 @@ class WaveformLoaderThread(QThread):
 
             # Create ~200 bins
             bins = 200
-            samples_per_bin = len(y) // bins
+            samples_per_bin = max(1, len(y) // bins)
 
+            S = np.abs(librosa.stft(y, n_fft=2048, hop_length=512))
+            freqs = librosa.fft_frequencies(sr=sr, n_fft=2048)
+
+            low_idx = np.where(freqs < 250)[0]
+            mid_idx = np.where((freqs >= 250) & (freqs < 4000))[0]
+            high_idx = np.where(freqs >= 4000)[0]
+
+            frames_per_bin = max(1, S.shape[1] // bins)
             waveform_data = []
+
             for i in range(bins):
                 if self._is_cancelled: return
-                start = i * samples_per_bin
-                end = start + samples_per_bin
-                # Extract max absolute amplitude in the bin
-                if len(y[start:end]) > 0:
-                    val = np.max(np.abs(y[start:end]))
-                    waveform_data.append(float(val))
+                start_samp = i * samples_per_bin
+                end_samp = start_samp + samples_per_bin
+
+                amp = float(np.max(np.abs(y[start_samp:end_samp]))) if len(y[start_samp:end_samp]) > 0 else 0.0
+
+                start_frame = i * frames_per_bin
+                end_frame = start_frame + frames_per_bin
+
+                if end_frame <= S.shape[1] and start_frame < S.shape[1]:
+                    S_bin = S[:, start_frame:end_frame]
+                    low_energy = np.mean(S_bin[low_idx, :])
+                    mid_energy = np.mean(S_bin[mid_idx, :])
+                    high_energy = np.mean(S_bin[high_idx, :])
+
+                    total = low_energy + mid_energy + high_energy
+                    if total > 0:
+                        r = int(min(255, (high_energy / total) * 255 * 1.5))
+                        g = int(min(255, (mid_energy / total) * 255 * 1.2))
+                        b = int(min(255, (low_energy / total) * 255 * 1.2))
+                    else:
+                        r, g, b = 100, 100, 100
                 else:
-                    waveform_data.append(0.0)
+                    r, g, b = 100, 100, 100
+
+                waveform_data.append({"amp": amp, "rgb": [r, g, b]})
 
             if self._is_cancelled: return
 
             # Normalize
-            max_val = max(waveform_data) if waveform_data else 1.0
+            max_val = max([item["amp"] for item in waveform_data]) if waveform_data else 1.0
             if max_val > 0:
-                waveform_data = [v / max_val for v in waveform_data]
+                for item in waveform_data:
+                    item["amp"] = round(item["amp"] / max_val, 3)
 
             self.waveform_ready.emit(waveform_data)
         except Exception as e:
@@ -62,6 +89,25 @@ class WaveformWidget(QWidget):
         self.is_playing = False
         self.waveform_data = []
         self.bw_mode = False
+        self.zoom_level = 1.0
+
+    def wheelEvent(self, event):
+        if event.angleDelta().y() > 0:
+            self.zoom_in()
+        else:
+            self.zoom_out()
+
+    def zoom_in(self):
+        self.zoom_level = min(5.0, self.zoom_level + 0.5)
+        self.update()
+
+    def zoom_out(self):
+        self.zoom_level = max(1.0, self.zoom_level - 0.5)
+        self.update()
+
+    def zoom_fit(self):
+        self.zoom_level = 1.0
+        self.update()
 
     def set_bw_mode(self, enabled):
         self.bw_mode = enabled
@@ -114,19 +160,40 @@ class WaveformWidget(QWidget):
         if not self.waveform_data:
             return
 
+        # Adjust calculations based on zoom level
+        virtual_width = width * self.zoom_level
         num_bars = len(self.waveform_data)
-        bar_width = width / num_bars
+        bar_width = virtual_width / num_bars
+
+        # Calculate offset to keep current progress centered if zoomed
+        offset_x = 0
+        if self.zoom_level > 1.0:
+            playhead_x = virtual_width * self.progress
+            offset_x = playhead_x - (width / 2)
+            offset_x = max(0, min(offset_x, virtual_width - width))
 
         # Calculate split index based on progress
         split_idx = int(self.progress * num_bars)
 
-        for i, val in enumerate(self.waveform_data):
+        for i, data_point in enumerate(self.waveform_data):
+            # Support both new dict RGB format and old float format
+            if isinstance(data_point, dict) and "amp" in data_point and "rgb" in data_point:
+                val = data_point["amp"]
+                r, g, b = data_point["rgb"]
+                base_color = QColor(r, g, b)
+            else:
+                val = float(data_point)
+                base_color = QColor(138, 43, 226) if i % 2 == 0 else QColor(0, 191, 255) # Old gradient
+
             # Scale height
             bar_h = val * (height - 10)
             if bar_h < 2:
                 bar_h = 2
 
-            x = i * bar_width
+            x = (i * bar_width) - offset_x
+            if x + bar_width < 0 or x > width:
+                continue # Outside visible area
+
             y = (height - bar_h) / 2
 
             # Color logic based on playing progress
@@ -137,11 +204,13 @@ class WaveformWidget(QWidget):
                     color = QColor(180, 180, 180)
             else:
                 if i < split_idx:
-                    # Played portion: gradient feel
-                    color = QColor(138, 43, 226) if i % 2 == 0 else QColor(0, 191, 255)
+                    # Played portion: use RGB base color
+                    color = base_color
                 else:
-                    # Unplayed portion
-                    color = QColor(100, 100, 120)
+                    # Unplayed portion: dim the base color
+                    color = QColor(int(base_color.red() * 0.4),
+                                   int(base_color.green() * 0.4),
+                                   int(base_color.blue() * 0.4))
 
             painter.fillRect(QRect(int(x), int(y), int(bar_width - 1) or 1, int(bar_h)), color)
 
