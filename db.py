@@ -36,6 +36,7 @@ class DatabaseManager:
                     peak REAL,
                     dynamic_range REAL,
                     confidence REAL,
+                    waveform_data TEXT,
                     last_scanned TIMESTAMP
                 )
             """)
@@ -122,3 +123,15 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM tracks')
             conn.commit()
+
+    def update_file_path(self, old_path, new_path):
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("UPDATE tracks SET file_path = ?, file_name = ? WHERE file_path = ?",
+                        (new_path, os.path.basename(new_path), old_path))
+            conn.commit()
+        except Exception as e:
+            print(f"DB update error: {e}")
+        finally:
+            conn.close()

@@ -1,10 +1,14 @@
 import sys
 import numpy as np
 import librosa
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QApplication
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal, QRect, QThread
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QApplication, QSlider
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal, QRect, QThread, QSize
 from PyQt6.QtGui import QPainter, QColor
-from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+try:
+    from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+    HAS_MULTIMEDIA = True
+except ImportError:
+    HAS_MULTIMEDIA = False
 
 class WaveformLoaderThread(QThread):
     waveform_ready = pyqtSignal(list)
@@ -272,18 +276,24 @@ class PlayerWidget(QWidget):
 
         self.layout.addLayout(self.player_layout, 4)
 
-        self.player = QMediaPlayer()
-        self.audio_output = QAudioOutput()
-        self.player.setAudioOutput(self.audio_output)
-        self.audio_output.setVolume(0.7)
-
-        self.player.positionChanged.connect(self.on_position_changed)
-        self.player.durationChanged.connect(self.on_duration_changed)
-        self.player.playbackStateChanged.connect(self.on_state_changed)
-        self.waveform.seek_requested.connect(self.seek_audio)
-
         self.current_duration = 0
         self.loader_thread = None
+
+        if HAS_MULTIMEDIA:
+            self.player = QMediaPlayer()
+            self.audio_output = QAudioOutput()
+            self.player.setAudioOutput(self.audio_output)
+            self.audio_output.setVolume(0.7)
+
+            self.player.positionChanged.connect(self.on_position_changed)
+            self.player.durationChanged.connect(self.on_duration_changed)
+            self.player.playbackStateChanged.connect(self.on_state_changed)
+            self.waveform.seek_requested.connect(self.seek_audio)
+        else:
+            self.player = None
+            self.audio_output = None
+            self.play_btn.setEnabled(False)
+            self.play_btn.setToolTip("PyQt6-Multimedia not installed. Playback disabled.")
 
 
     def seek_audio(self, progress):
@@ -291,14 +301,22 @@ class PlayerWidget(QWidget):
             new_position = int(progress * self.current_duration)
             self.player.setPosition(new_position)
 
-    def load_track(self, file_path, title="Unknown", artist="Unknown", key="--", genre="--", energy="--"):
+    def load_track(self, file_path, title="Unknown", artist="Unknown", key="--", genre="--", energy="--", cover_pixmap=None, waveform_data="[]"):
 
         self.title_label.setText(title)
         self.artist_label.setText(artist)
         self.meta_label.setText(f"Key: {key} | Genre: {genre} | Energy: {energy}")
 
-        self.player.stop()
-        self.player.setSource(QUrl.fromLocalFile(file_path))
+        if hasattr(self, 'art_label'):
+            if cover_pixmap and not cover_pixmap.isNull():
+                self.art_label.setPixmap(cover_pixmap)
+            else:
+                self.art_label.clear()
+                self.art_label.setText("No Art")
+
+        if HAS_MULTIMEDIA and self.player:
+            self.player.stop()
+            self.player.setSource(QUrl.fromLocalFile(file_path))
 
         self.waveform.clear_waveform()
         self.waveform.set_progress(0)
@@ -314,16 +332,18 @@ class PlayerWidget(QWidget):
         self.loader_thread.start()
 
     def toggle_play(self):
-        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-            self.player.pause()
-        else:
-            self.player.play()
+        if HAS_MULTIMEDIA and self.player:
+            if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self.player.pause()
+            else:
+                self.player.play()
 
     def on_state_changed(self, state):
-        if state == QMediaPlayer.PlaybackState.PlayingState:
-            self.play_btn.setText("⏸")
-        else:
-            self.play_btn.setText("▶")
+        if HAS_MULTIMEDIA:
+            if state == QMediaPlayer.PlaybackState.PlayingState:
+                self.play_btn.setText("⏸")
+            else:
+                self.play_btn.setText("▶")
 
     def on_position_changed(self, position):
         if self.current_duration > 0:
